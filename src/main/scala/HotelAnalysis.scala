@@ -56,7 +56,7 @@ object DataLoader:
 
     catch
       case e: Exception =>
-        println(s"errorrrrr: $e")
+        println(s"error: $e")
         List.empty
     finally {
       // closing file
@@ -73,7 +73,7 @@ object HotelAnalysis:
     // define filename and load data
     val filename = "Hotel_Dataset.csv"
     val bookings = DataLoader.loadData(filename)
-    // validation chcek
+    // validation check
     if bookings.isEmpty then
       println(s"$bookings has no data")
     else
@@ -87,6 +87,27 @@ object HotelAnalysis:
 
       // Q1
       println("\nQuestion 1:")
+
+      //Shared interface for data analysis
+      trait BookingQuery[T]:
+        def execute(rows: List[Booking]): T
+
+      //Return the highest frequency of destination country for Question 1
+      object Question1 extends BookingQuery[(String , Int)]:
+
+        //Data Pipeline
+        override def execute(rows: List[Booking]): (String , Int) =
+
+          //Group by the destination country column
+          //Returns the number of count for destination country
+          val countryStats = bookings.groupBy(_.destinationCountry).map {
+            (country, list) => (country , list.size)
+          }
+
+          //Return highest number of booking by country if not empty.
+          if countryStats.isEmpty then ("No data is found" , 0) else countryStats.maxBy(_._2)
+
+
 
 
       // Q2
