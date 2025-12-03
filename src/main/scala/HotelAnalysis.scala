@@ -11,21 +11,9 @@ case class Booking( // U guys can add cols u need to use if needed
                     profitMargin: Double
                   )
 
-object HotelAnalysis:
 
-  @main def run(): Unit =
-    // define filename and load data
-    val filename = "Hotel_Dataset.csv"
-    val bookings = loadData(filename)
-    // validation chcek
-    if bookings.isEmpty then
-      println(s"$bookings has no data")
-    else
-      // Expected 66541 data - 5 duplicates = 66536 unique bookings
-//      println(bookings)
-      println(s"loaded ${bookings.size} bookings.")
-      println(bookings.take(5))
-
+// Wrap in a module
+object DataLoader:
   def loadData(filename: String): List[Booking] =
     var source: BufferedSource = null
 
@@ -76,3 +64,41 @@ object HotelAnalysis:
         println("success file source closed")
         source.close()
     }
+
+
+
+object HotelAnalysis:
+
+  @main def run(): Unit =
+    // define filename and load data
+    val filename = "Hotel_Dataset.csv"
+    val bookings = DataLoader.loadData(filename)
+    // validation chcek
+    if bookings.isEmpty then
+      println(s"$bookings has no data")
+    else
+      // Expected 66541 data - 5 duplicates = 66536 unique bookings
+      //      println(bookings)
+      println(s"loaded ${bookings.size} bookings.")
+      println(bookings.take(5))
+
+      //answer display
+      // Create report object
+
+      // Q1
+      println("\nQuestion 1:")
+
+
+      // Q2
+      println("\nQuestion 2:")
+
+
+      // Q3
+      println("\nQuestion 3:")
+
+
+/* min max, price, discount, profit margin (per room)
+  (bookingprice - min) / (max - min)
+
+
+*/
