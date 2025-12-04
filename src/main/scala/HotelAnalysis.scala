@@ -117,6 +117,23 @@ object HotelAnalysis:
       // Q3
       println("\nQuestion 3:")
 
+      println("\nHere is the original:")
+
+      //copying list of bookings and calculating real profit
+      val realProfit = bookings.map( booking => booking.copy(price = booking.price * (1-booking.discount) * booking.profitMargin))
+
+      //Grouping bookings by hotelName and destinationCountry and calculating the sum of real profit
+      val profitByHotel = realProfit.groupBy(booking => (booking.hotelName , booking.destinationCountry)).mapValues(_.map(_.price).sum)
+
+      //Hotel with the highest real profit
+      val winner = profitByHotel.maxBy(_._2)
+
+      //Display message
+      println(s"The most profitable hotel is ${winner._1._1} in ${winner._1._2} with a profit of ${winner._2} SGD" )
+
+
+
+
 
 /* min max, price, discount, profit margin (per room)
   (bookingprice - min) / (max - min)
