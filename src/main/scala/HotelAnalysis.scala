@@ -117,8 +117,6 @@ object HotelAnalysis:
       // Q3
       println("\nQuestion 3:")
 
-      println("\nHere is the original:")
-
       //copying list of bookings and calculating real profit
       val realProfit = bookings.map( booking => booking.copy(price = booking.price * (1-booking.discount) * booking.profitMargin))
 
