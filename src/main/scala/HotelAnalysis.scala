@@ -4,22 +4,22 @@ import scala.util.Try
 case class Booking( // U guys can add cols u need to use if needed
                     bookingId: String,
                     destinationCountry: String,
+                    destinationCity: String,
                     hotelName: String,
                     visitors: Int,
                     price: Double,
                     discount: Double,
-                    profitMargin: Double
+                    profitMargin: Double,
+                    days: Int,
+                    rooms: Int
                   )
-
 
 // Wrap in a module
 object DataLoader:
   def loadData(filename: String): List[Booking] =
     var source: BufferedSource = null
-
     try
       val resource = getClass.getClassLoader.getResource(filename)
-
       // validate resource
       if resource != null then {
 //        println(s"resource.getPath: ${resource.getPath}")
@@ -40,6 +40,7 @@ object DataLoader:
           Try {
             val bookingId = cols(0)
             val destCountry = cols(9)
+            val destCity = cols(10)
             val hotel = cols(16)
             val visitors = cols(11).toInt
             val price = cols(20).toDouble
@@ -47,28 +48,130 @@ object DataLoader:
             val discountStr = cols(21).replace("%", "")
             val discount = discountStr.toDouble / 100.0
             val margin = cols(23).toDouble
+            val days = cols(13).toInt
+            val rooms = cols(15).toInt
 
-            Booking(bookingId, destCountry, hotel, visitors, price, discount, margin)
+            Booking(bookingId, destCountry, destCity, hotel, visitors, price, discount, margin, days, rooms)
           }.toOption
         else
           None
       }.distinct // removing only the 5 true duplicates
-
     catch
       case e: Exception =>
         println(s"error: $e")
         List.empty
-    finally {
+    finally
       // closing file
       if source != null then
         println("success file source closed")
         source.close()
+  end loadData
+end DataLoader
+
+trait BookingQuery[T]:
+  def execute(rows: List[Booking]): T
+
+// Question 1
+object TopCountry extends BookingQuery[(String, Int)]:
+  override def execute(rows: List[Booking]): (String, Int) =
+    //Group by the destination country column
+    //Returns the number of count for destination country
+    val countryStats = rows.groupBy(_.destinationCountry).map {
+      (country, list) => (country, list.size)
+    }
+    //Return highest number of booking by country if not empty.
+    if countryStats.isEmpty then ("No data is found", 0) else countryStats.maxBy(_._2)
+  end execute
+end TopCountry
+
+// Question 2
+object MostEconomicalHotel extends BookingQuery[(String, Double)]:
+  private case class HotelMetrics(avgPricePerRoomDay: Double, avgDiscount: Double, avgMargin: Double)
+
+  override def execute(rows: List[Booking]): (String, Double) =
+    if rows.isEmpty then return ("No Data", 0.0)
+    // calculate avg of price, discount, profit of margin for each hotel
+    // group by hotel name, country and city
+    val hotelStats = rows.groupBy(b => (b.hotelName, b.destinationCountry, b.destinationCity)).map { case ((hotel, country, city), list) =>
+      val avgPrice = list.map(b => b.price / (b.rooms * b.days)).sum / list.size
+      val avgDisc = list.map(_.discount).sum / list.size
+      val avgMarg = list.map(_.profitMargin).sum / list.size
+      (hotel, country, city) -> HotelMetrics(avgPrice, avgDisc, avgMarg)
+    }
+    // Find Global Min/Max for Normalization
+    val stats = hotelStats.values
+    val minP = stats.map(_.avgPricePerRoomDay).min
+    val maxP = stats.map(_.avgPricePerRoomDay).max
+    val minD = stats.map(_.avgDiscount).min
+    val maxD = stats.map(_.avgDiscount).max
+    val minM = stats.map(_.avgMargin).min
+    val maxM = stats.map(_.avgMargin).max
+
+    // Calculate Normalized Score for each hotel
+    // Formula: (Val - Min) / (Max - Min)
+    // Low Price = Good (1 - norm)
+    // High Disc = Good (norm)
+    // Low Margin = Good (1 - norm)
+    // Most economical = Highest Score
+    val scoredHotels = hotelStats.map { case ((hotel, country, city), m) =>
+      val normPrice = if (maxP == minP) 0.0 else (m.avgPricePerRoomDay - minP) / (maxP - minP)
+      val normDisc = if (maxD == minD) 1.0 else (m.avgDiscount - minD) / (maxD - minD)
+      val normMarg = if (maxM == minM) 0.0 else (m.avgMargin - minM) / (maxM - minM)
+
+      val finalScore = (((1 - normPrice) + normDisc + (1 - normMarg)) * 100) / 3.0
+      (s"$hotel ($city ,$country)", finalScore)
+    }
+    // using max to find the highest score
+    scoredHotels.maxBy(_._2)
+
+// Question 3
+object MostProfitableHotel extends BookingQuery[(String, Double)]:
+  private case class PerformanceMetrics(totalVisitors: Int, avgMargin: Double)
+
+  override def execute(rows: List[Booking]): (String, Double) =
+    if rows.isEmpty then return ("No Data", 0.0)
+
+    // Calculate avg margin total visitors
+    val hotelStats = rows.groupBy(b => (b.hotelName, b.destinationCity, b.destinationCountry)).map { case ((hotel, city, country), list) =>
+      val totalVisitors = list.map(_.visitors).sum
+      val avgMargin = list.map(_.profitMargin).sum / list.size
+
+        (hotel, city, country) -> PerformanceMetrics(totalVisitors, avgMargin)
+      }
+
+    // Find Min/Max for Normalization
+    val stats = hotelStats.values
+    val minV = stats.map(_.totalVisitors).min.toDouble
+    val maxV = stats.map(_.totalVisitors).max.toDouble
+    val minM = stats.map(_.avgMargin).min
+    val maxM = stats.map(_.avgMargin).max
+
+    // Calculate Normalized Score for each hotel
+    // Formula: (Val - Min) / (Max - Min)
+    // High Visitors = Good (norm)
+    // High Margin = Good (norm)
+    // Most profitable = Highest Score
+    val scoredHotels = hotelStats.map { case ((hotel, city, country), m) =>
+      val normVisitors = if (maxV == minV) 1.0 else (m.totalVisitors - minV) / (maxV - minV)
+      val normMargin = if (maxM == minM) 1.0 else (m.avgMargin - minM) / (maxM - minM)
+
+      val finalScore = (normVisitors + normMargin) * 100 / 2.0
+      (s"$hotel ($city, $country)", finalScore)
     }
 
+    // 4. Sort Descending (Max Score is best)
+    scoredHotels.maxBy(_._2)
 
+class HotelReport(bookings: List[Booking]):
+  def getTopCountryResult(): (String, Int) =
+    TopCountry.execute(bookings)
+  def getMostEconomicalHotel(): (String, Double) =
+    MostEconomicalHotel.execute(bookings)
+  def getMostProfitableHotel(): (String, Double) =
+    MostProfitableHotel.execute(bookings)
+end HotelReport
 
 object HotelAnalysis:
-
   @main def run(): Unit =
     // define filename and load data
     val filename = "Hotel_Dataset.csv"
@@ -84,57 +187,23 @@ object HotelAnalysis:
 
       //answer display
       // Create report object
+      val report = new HotelReport(bookings)
 
       // Q1
       println("\nQuestion 1:")
-
-      //Shared interface for data analysis
-      trait BookingQuery[T]:
-        def execute(rows: List[Booking]): T
-
-      //Return the highest frequency of destination country for Question 1
-      object Question1 extends BookingQuery[(String , Int)]:
-
-        //Data Pipeline
-        override def execute(rows: List[Booking]): (String , Int) =
-
-          //Group by the destination country column
-          //Returns the number of count for destination country
-          val countryStats = bookings.groupBy(_.destinationCountry).map {
-            (country, list) => (country , list.size)
-          }
-
-          //Return highest number of booking by country if not empty.
-          if countryStats.isEmpty then ("No data is found" , 0) else countryStats.maxBy(_._2)
-
-
-
+      val (country, count) = report.getTopCountryResult()
+      println(s"Top Country: $country ($count bookings)")
 
       // Q2
       println("\nQuestion 2:")
-
+      val (econHotel, econScore) = report.getMostEconomicalHotel()
+      println(s"Most Economical Hotel: $econHotel")
+      println(f"Score: $econScore%.2f%%")
 
       // Q3
       println("\nQuestion 3:")
-
-      //copying list of bookings and calculating real profit
-      val realProfit = bookings.map( booking => booking.copy(price = (booking.price * (1-booking.discount) * booking.profitMargin)/booking.visitors))
-
-      //Grouping bookings by hotelName and destinationCountry and calculating the sum of real profit
-      val profitByHotel = realProfit.groupBy(booking => (booking.hotelName , booking.destinationCountry)).mapValues(_.map(_.price).sum)
-
-      //Hotel with the highest real profit
-      val winner = profitByHotel.maxBy(_._2)
-
-      //Display message
-      println(s"The most profitable hotel is ${winner._1._1} in ${winner._1._2} with a profit of ${winner._2} SGD per person" )
-
-
-
-
-
-/* min max, price, discount, profit margin (per room)
-  (bookingprice - min) / (max - min)
-
-
-*/
+      val (profitHotel, profitScore) = report.getMostProfitableHotel()
+      println(s"Best Performing Hotel: $profitHotel")
+      println(f"Score: $profitScore%.2f%%")
+  end run
+end HotelAnalysis
