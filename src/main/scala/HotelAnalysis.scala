@@ -21,35 +21,50 @@ object DataLoader:
     try
       val resource = getClass.getClassLoader.getResource(filename)
       // validate resource
-      if resource != null then {
-//        println(s"resource.getPath: ${resource.getPath}")
+      if resource != null then
+      //println(s"resource.getPath: ${resource.getPath}")
         println("file found in resources")
         source = Source.fromURL(resource, "UTF-8")
-      } else
+      else
         println("file NOT found in resources")
+        return List.empty
 
       // Read lines as list
       val lines = source.getLines().toList
       println(s"Debug: File successfully read. Total lines: ${lines.size}")
+      if lines.isEmpty then return List.empty
 
-      // Simple parsing to verify data structure
-      lines.drop(1).flatMap { line =>
+      //Remove any invisible BOM (Byte Order Mark) from the Column names/
+      val headerRow = lines.head.split(",").map(_.trim.replaceAll("\uFEFF", ""))
+      //Dynamic approach to find data by name.
+      //If columns shift or new columns are added, this map will update automatically.
+      val headerMap = headerRow.zipWithIndex.toMap
+
+      //Returns an explicit error if required column is missing from the file
+      def getCol(name: String, row: Array[String]): String =
+        headerMap.get(name) match
+          case Some(index) if index < row.length => row(index)
+          case Some(_) => throw new Exception(s"Row too short for col '$name'")
+          case None => throw new Exception(s"Header '$name' NOT FOUND. Check spelling/case!")
+
+      // Simple parsing to verify data structure.
+      lines.tail.flatMap { line =>
         val cols = line.split(",").map(_.trim)
-        // We just check if we have enough columns to proceed
-        if cols.length >= 24 then
+        //Using a more dynamic lookup for column names.
+        if cols.nonEmpty then
           Try {
-            val bookingId = cols(0)
-            val destCountry = cols(9)
-            val destCity = cols(10)
-            val hotel = cols(16)
-            val visitors = cols(11).toInt
-            val price = cols(20).toDouble
+            val bookingId = getCol("Booking ID", cols)
+            val destCountry = getCol("Destination Country", cols)
+            val destCity = getCol("Destination City", cols)
+            val hotel = getCol("Hotel Name", cols)
+            val visitors = getCol("No. Of People", cols).toInt
+            val price = getCol("Booking Price[SGD]", cols).toDouble
             // Handle the % sign
-            val discountStr = cols(21).replace("%", "")
-            val discount = discountStr.toDouble / 100.0
-            val margin = cols(23).toDouble
-            val days = cols(13).toInt
-            val rooms = cols(15).toInt
+            val discountStr = getCol("Discount", cols).replace("%" , "")
+            val discount = discountStr.toDouble / 100.00
+            val margin = getCol("Profit Margin", cols).toDouble
+            val days = getCol("No of Days", cols).toInt
+            val rooms = getCol("Rooms", cols).toInt
 
             Booking(bookingId, destCountry, destCity, hotel, visitors, price, discount, margin, days, rooms)
           }.toOption
