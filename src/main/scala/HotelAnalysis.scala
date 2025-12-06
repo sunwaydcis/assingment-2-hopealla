@@ -34,7 +34,7 @@ object DataLoader:
       println(s"Debug: File successfully read. Total lines: ${lines.size}")
       if lines.isEmpty then return List.empty
 
-      //Remove any invisible BOM (Byte Order Mark) from the Column names/
+      //Remove any invisible BOM (Byte Order Mark) from the Column names.
       val headerRow = lines.head.split(",").map(_.trim.replaceAll("\uFEFF", ""))
       //Dynamic approach to find data by name.
       //If columns shift or new columns are added, this map will update automatically.
