@@ -14,6 +14,35 @@ case class Booking( // U guys can add cols u need to use if needed
                     rooms: Int
                   )
 
+//Calculation process
+object MathUtils:
+  // High-Performance: Find Min and Max in a SINGLE pass (O(N))
+  // This is purely mathematical and has no dependency on "Bookings"
+  def getRange[T](items: Iterable[T])(extractor: T => Double): (Double, Double) =
+    if items.isEmpty then (0.0, 0.0)
+    else
+      items.foldLeft((Double.MaxValue, Double.MinValue)) { case ((min, max), item) =>
+        val v = extractor(item)
+        (math.min(min, v), math.max(max, v))
+      }
+
+  // Reusable Math for Normalization
+  def normalize(value: Double, min: Double, max: Double, defaultVal: Double = 0.0): Double =
+    if (max == min) defaultVal
+    else (value - min) / (max - min)
+end MathUtils
+
+// Business logic here
+object BookingExtensions:
+  // Type alias for the common Hotel Key
+  private type HotelKey = (String, String, String) // (Name, City, Country)
+
+  // Specific business rule: How do we define a "Unique Hotel Group"?
+  // Order: Name -> City -> Country
+  def groupHotels(rows: List[Booking]): Map[HotelKey, List[Booking]] =
+    rows.groupBy(b => (b.hotelName, b.destinationCity, b.destinationCountry))
+end BookingExtensions
+
 // Wrap in a module
 object DataLoader:
   def loadData(filename: String): List[Booking] =
@@ -49,7 +78,7 @@ object DataLoader:
 
       // Simple parsing to verify data structure.
       lines.tail.flatMap { line =>
-        val cols = line.split(",").map(_.trim)
+        val cols = line.split(",", -1).map(_.trim)
         //Using a more dynamic lookup for column names.
         if cols.nonEmpty then
           Try {
@@ -107,20 +136,19 @@ object MostEconomicalHotel extends BookingQuery[(String, Double)]:
     if rows.isEmpty then return ("No Data", 0.0)
     // calculate avg of price, discount, profit of margin for each hotel
     // group by hotel name, country and city
-    val hotelStats = rows.groupBy(b => (b.hotelName, b.destinationCountry, b.destinationCity)).map { case ((hotel, country, city), list) =>
+    val hotelGroups = BookingExtensions.groupHotels(rows)
+
+    val hotelStats = hotelGroups.map { case ((hotel, city, country), list) =>
       val avgPrice = list.map(b => b.price / (b.rooms * b.days)).sum / list.size
       val avgDisc = list.map(_.discount).sum / list.size
       val avgMarg = list.map(_.profitMargin).sum / list.size
-      (hotel, country, city) -> HotelMetrics(avgPrice, avgDisc, avgMarg)
+      (hotel, city, country) -> HotelMetrics(avgPrice, avgDisc, avgMarg)
     }
     // Find Global Min/Max for Normalization
     val stats = hotelStats.values
-    val minP = stats.map(_.avgPricePerRoomDay).min
-    val maxP = stats.map(_.avgPricePerRoomDay).max
-    val minD = stats.map(_.avgDiscount).min
-    val maxD = stats.map(_.avgDiscount).max
-    val minM = stats.map(_.avgMargin).min
-    val maxM = stats.map(_.avgMargin).max
+    val (minP, maxP) = MathUtils.getRange(stats)(_.avgPricePerRoomDay)
+    val (minD, maxD) = MathUtils.getRange(stats)(_.avgDiscount)
+    val (minM, maxM) = MathUtils.getRange(stats)(_.avgMargin)
 
     // Calculate Normalized Score for each hotel
     // Formula: (Val - Min) / (Max - Min)
@@ -128,16 +156,18 @@ object MostEconomicalHotel extends BookingQuery[(String, Double)]:
     // High Disc = Good (norm)
     // Low Margin = Good (1 - norm)
     // Most economical = Highest Score
-    val scoredHotels = hotelStats.map { case ((hotel, country, city), m) =>
-      val normPrice = if (maxP == minP) 0.0 else (m.avgPricePerRoomDay - minP) / (maxP - minP)
-      val normDisc = if (maxD == minD) 1.0 else (m.avgDiscount - minD) / (maxD - minD)
-      val normMarg = if (maxM == minM) 0.0 else (m.avgMargin - minM) / (maxM - minM)
+    val scoredHotels = hotelStats.map { case ((hotel, city, country), m) =>
+      val normPrice = MathUtils.normalize(m.avgPricePerRoomDay, minP, maxP, 0.0)
+      val normDisc = MathUtils.normalize(m.avgDiscount, minD, maxD, 1.0)
+      val normMarg = MathUtils.normalize(m.avgMargin, minM, maxM, 0.0)
 
       val finalScore = (((1 - normPrice) + normDisc + (1 - normMarg)) * 100) / 3.0
       (s"$hotel ($city ,$country)", finalScore)
     }
     // using max to find the highest score
     scoredHotels.maxBy(_._2)
+  end execute
+end MostEconomicalHotel
 
 // Question 3
 object MostProfitableHotel extends BookingQuery[(String, Double)]:
@@ -147,19 +177,19 @@ object MostProfitableHotel extends BookingQuery[(String, Double)]:
     if rows.isEmpty then return ("No Data", 0.0)
 
     // Calculate avg margin total visitors
-    val hotelStats = rows.groupBy(b => (b.hotelName, b.destinationCity, b.destinationCountry)).map { case ((hotel, city, country), list) =>
+    val hotelGroups = BookingExtensions.groupHotels(rows)
+
+    val hotelStats = hotelGroups.map { case ((hotel, city, country), list) =>
       val totalVisitors = list.map(_.visitors).sum
       val avgMargin = list.map(_.profitMargin).sum / list.size
 
-        (hotel, city, country) -> PerformanceMetrics(totalVisitors, avgMargin)
-      }
+      (hotel, city, country) -> PerformanceMetrics(totalVisitors, avgMargin)
+    }
 
     // Find Min/Max for Normalization
     val stats = hotelStats.values
-    val minV = stats.map(_.totalVisitors).min.toDouble
-    val maxV = stats.map(_.totalVisitors).max.toDouble
-    val minM = stats.map(_.avgMargin).min
-    val maxM = stats.map(_.avgMargin).max
+    val (minV, maxV) = MathUtils.getRange(stats)(_.totalVisitors.toDouble)
+    val (minM, maxM) = MathUtils.getRange(stats)(_.avgMargin)
 
     // Calculate Normalized Score for each hotel
     // Formula: (Val - Min) / (Max - Min)
@@ -167,8 +197,8 @@ object MostProfitableHotel extends BookingQuery[(String, Double)]:
     // High Margin = Good (norm)
     // Most profitable = Highest Score
     val scoredHotels = hotelStats.map { case ((hotel, city, country), m) =>
-      val normVisitors = if (maxV == minV) 1.0 else (m.totalVisitors - minV) / (maxV - minV)
-      val normMargin = if (maxM == minM) 1.0 else (m.avgMargin - minM) / (maxM - minM)
+      val normVisitors = MathUtils.normalize(m.totalVisitors.toDouble, minV, maxV, 1.0)
+      val normMargin = MathUtils.normalize(m.avgMargin, minM, maxM, 1.0)
 
       val finalScore = (normVisitors + normMargin) * 100 / 2.0
       (s"$hotel ($city, $country)", finalScore)
@@ -176,6 +206,8 @@ object MostProfitableHotel extends BookingQuery[(String, Double)]:
 
     // 4. Sort Descending (Max Score is best)
     scoredHotels.maxBy(_._2)
+  end execute
+end MostProfitableHotel
 
 class HotelReport(bookings: List[Booking]):
   //pass through any of the three )TopCountry, MostEconomicalHotel, MostProfitableHotel).
