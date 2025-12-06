@@ -178,12 +178,10 @@ object MostProfitableHotel extends BookingQuery[(String, Double)]:
     scoredHotels.maxBy(_._2)
 
 class HotelReport(bookings: List[Booking]):
-  def getTopCountryResult(): (String, Int) =
-    TopCountry.execute(bookings)
-  def getMostEconomicalHotel(): (String, Double) =
-    MostEconomicalHotel.execute(bookings)
-  def getMostProfitableHotel(): (String, Double) =
-    MostProfitableHotel.execute(bookings)
+  //pass through any of the three )TopCountry, MostEconomicalHotel, MostProfitableHotel).
+  def runQuery[T](query: BookingQuery[T]): T =
+    query.execute(bookings)
+
 end HotelReport
 
 object HotelAnalysis:
@@ -206,18 +204,19 @@ object HotelAnalysis:
 
       // Q1
       println("\nQuestion 1:")
-      val (country, count) = report.getTopCountryResult()
+      val (country, count) = report.runQuery(TopCountry)
       println(s"Top Country: $country ($count bookings)")
 
       // Q2
       println("\nQuestion 2:")
-      val (econHotel, econScore) = report.getMostEconomicalHotel()
+      val (econHotel, econScore) = report.runQuery(MostEconomicalHotel)
       println(s"Most Economical Hotel: $econHotel")
       println(f"Score: $econScore%.2f%%")
 
+
       // Q3
       println("\nQuestion 3:")
-      val (profitHotel, profitScore) = report.getMostProfitableHotel()
+      val (profitHotel, profitScore) = report.runQuery(MostProfitableHotel)
       println(s"Best Performing Hotel: $profitHotel")
       println(f"Score: $profitScore%.2f%%")
   end run
